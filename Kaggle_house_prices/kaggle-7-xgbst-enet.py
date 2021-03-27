@@ -49,7 +49,7 @@ import os
 #######################################################数据导入和特征提取-【开始】################################################################################
 #显示当前编译器的Draft Environment下的文件；将文件夹下的对应名称csv文件储存为矩阵对象。
 print(os.listdir("../input"))
-train = pd.read_csv('../input/house-prices-advanced-regression-techniques/train.csv')
+train = pd.read_csv('./data/train.csv')
 test = pd.read_csv('../input/house-prices-advanced-regression-techniques/test.csv')
 
 #显示矩阵对象的维数，核查是否导入成功
