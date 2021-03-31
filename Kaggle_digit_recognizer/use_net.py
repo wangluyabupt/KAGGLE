@@ -34,6 +34,7 @@ class ReshapeTransform:
 
 
 # Dataset类，配合DataLoader使用
+'''
 class myDataset(Dataset):
   def __init__(self, path, transform=None, is_train=True, seed=777):
     """
@@ -58,6 +59,7 @@ class myDataset(Dataset):
     if self.transform:
       data = self.transform(data)
     return data, lab
+  '''
 # 预处理Pipeline
 transform = transforms.Compose([
     ReshapeTransform((-1,28,28), 255),  # 一维向量变为28*28图片并且缩放(0-255)到0-1
@@ -78,6 +80,50 @@ def _weight_init(m):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
 # 建立网络
+class CNNModel(nn.Module):
+    def __init__(self):
+        super(CNNModel, self).__init__()
+        
+        # Convolution 1
+        self.cnn1 = nn.Conv2d(in_channels=1, out_channels=16, kernel_size=5, stride=1, padding=0)
+        self.relu1 = nn.ReLU()
+        
+        # Max pool 1
+        self.maxpool1 = nn.MaxPool2d(kernel_size=2)
+     
+        # Convolution 2
+        self.cnn2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=5, stride=1, padding=0)
+        self.relu2 = nn.ReLU()
+        
+        # Max pool 2
+        self.maxpool2 = nn.MaxPool2d(kernel_size=2)
+        
+        # Fully connected 1
+        self.fc1 = nn.Linear(32 * 4 * 4, 10) 
+       
+    def forward(self, x):
+        # Convolution 1
+        out = self.cnn1(x)  # 输出 torch.Size([16,32,26,26])
+        out = self.relu1(out) #  # 输出 torch.Size([16,32,16,26])
+        
+        # Max pool 1
+        out = self.maxpool1(out)  # 输出 torch.Size([16,32,12,12])
+        
+        # Convolution 2 
+        out = self.cnn2(out)   # 输出 torch.Size([16,32,8,8])
+        out = self.relu2(out)   #  torch.Size([16,32,8,8])
+        
+        # Max pool 2 
+        out = self.maxpool2(out)  #  torch.Size([16,32,4,4])
+        
+        # flatten
+        out = out.view(out.size(0), -1) # torch.Size([16,512]),就是torch.Size([16,32*4*4])
+
+        # Linear function (readout)
+        out = self.fc1(out)   # # torch.Size([16,10])
+        
+        return out
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -101,16 +147,40 @@ class Net(nn.Module):
 
 
 # 加载训练集
-train_data = myDataset('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/train.csv', transform, True)
-train = DataLoader(train_data, batch_size=16, shuffle=True, num_workers=4)
-vail_data = myDataset('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/train.csv', transform, False)
-vail = DataLoader(vail_data, batch_size=16, shuffle=True, num_workers=4)
+train0 = pd.read_csv('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/train.csv',dtype = np.float32)
+targets_numpy = train0.label.values
+features_numpy = train0.loc[:,train0.columns != "label"].values/255 # normalization
+
+features_train, features_test, targets_train, targets_test = train_test_split(features_numpy,
+                                                                             targets_numpy,
+                                                                             test_size = 0.2,
+                                                                             random_state = 42) 
+featuresTrain = torch.from_numpy(features_train)
+targetsTrain = torch.from_numpy(targets_train).type(torch.LongTensor) # data type is  long
+featuresTest = torch.from_numpy(features_test)
+targetsTest = torch.from_numpy(targets_test).type(torch.LongTensor) # data type is long
+
+# Pytorch train and test sets
+train = torch.utils.data.TensorDataset(featuresTrain,targetsTrain)
+test = torch.utils.data.TensorDataset(featuresTest,targetsTest)
+
+# data loader
+train = DataLoader(train, batch_size = 16, shuffle = True)
+vail = DataLoader(test, batch_size = 16, shuffle = True)
+
+
+
+
+# train_data = myDataset('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/train.csv', transform, True)
+# train = DataLoader(train_data, batch_size=16, shuffle=True, num_workers=4)
+# vail_data = myDataset('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/train.csv', transform, False)
+# vail = DataLoader(vail_data, batch_size=16, shuffle=True, num_workers=4)
 
 # 加载测试集
-test_data = pd.read_csv('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/test.csv')
-test_data = transform(test_data.values)
+# test_data = pd.read_csv('/Users/wangluya/PycharmProjects/datasets/digit_recognizer/test.csv')
+# test_data = transform(test_data.values)
 
-net = Net()
+net = CNNModel()
 
 # 优化器和损失函数
 optimizer = optim.Adam(net.parameters(), lr=0.0005) # 使用Adam作为优化器
@@ -124,6 +194,7 @@ scheduler = StepLR(optimizer, step_size=10, gamma=0.5) # 这里使用StepLR，�
 device = 'cpu' 
 epochs = 100
 loss_history = []
+from torch.autograd import Variable
 if __name__ == '__main__':
     # 训练模型
     for epoch in range(epochs):
@@ -131,11 +202,14 @@ if __name__ == '__main__':
         train_loss = []
         val_loss = []
         with torch.set_grad_enabled(True):
-            net.train()
+            # net.train()
             for batch, (data, target) in enumerate(train):
                 data = data.to(device).float()
                 target = target.to(device)
                 optimizer.zero_grad()
+
+                data = Variable(data.view(16,1,28,28))
+
                 predict = net(data)
                 loss = criterion(predict, target)
                 loss.backward()
